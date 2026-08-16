@@ -1,0 +1,1 @@
+export default function handler(req,res){res.setHeader('Set-Cookie','cp_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');console.log(JSON.stringify({event:'cp_logout',at:new Date().toISOString()}));res.status(200).json({ok:true});}

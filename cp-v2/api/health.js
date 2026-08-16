@@ -1,0 +1,1 @@
+export default function handler(req,res){res.setHeader('Cache-Control','no-store');res.status(200).json({ok:true,service:'CP Automotive Knowledge Platform',version:'2.1',auth:process.env.CP_AUTH_ENABLED==='true'?'enabled':'disabled',time:new Date().toISOString()});}

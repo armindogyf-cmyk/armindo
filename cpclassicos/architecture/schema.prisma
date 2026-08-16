@@ -1,0 +1,192 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+enum RecordStatus { DRAFT QUARANTINE CANDIDATE CONFIRMED REJECTED SUPERSEDED ARCHIVED }
+enum SourceGrade { A B C D }
+enum AssertionStatus { QUARANTINE CANDIDATE CONFIRMED REJECTED SUPERSEDED }
+enum Severity { LOW MEDIUM HIGH CRITICAL }
+enum WorkOrderStatus { DRAFT TECHNICAL_REVIEW APPROVED IN_PROGRESS QA CLOSED BLOCKED CANCELLED }
+enum DiagnosticNodeType { SYMPTOM HYPOTHESIS TEST OBSERVATION CONCLUSION CORRECTIVE_ACTION }
+enum DiagnosticEdgeType { SUPPORTS CONTRADICTS TESTS NEXT_IF_TRUE NEXT_IF_FALSE RESOLVED_BY }
+enum EvidenceKind { PHOTO DOCUMENT SCAN MEASUREMENT SCREENSHOT VIDEO AUDIO OTHER }
+enum WorkOrderLineType { LABOR PART TOOL CONSUMABLE OTHER }
+
+model Project {
+ id String @id @default(uuid()) @db.Uuid
+ code String @unique
+ name String
+ ownerName String? @map("owner_name")
+ status RecordStatus @default(DRAFT)
+ vehicles Vehicle[]
+ evidence EvidenceAsset[]
+ createdAt DateTime @default(now()) @map("created_at")
+ updatedAt DateTime @updatedAt @map("updated_at")
+ @@map("projects")
+}
+model Vehicle {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @db.Uuid @map("project_id")
+ project Project @relation(fields:[projectId], references:[id], onDelete:Cascade)
+ cpVehicleCode String @unique @map("cp_vehicle_code")
+ vin String?
+ registration String?
+ manufacturer String
+ model String
+ generation String?
+ modelYear Int? @map("model_year")
+ market String?
+ typeApproval String? @map("type_approval")
+ status RecordStatus @default(DRAFT)
+ configurations VehicleConfiguration[]
+ faults Fault[]
+ workOrders WorkOrder[]
+ evidence EvidenceAsset[]
+ createdAt DateTime @default(now()) @map("created_at")
+ updatedAt DateTime @updatedAt @map("updated_at")
+ @@index([vin])
+ @@map("vehicles")
+}
+model VehicleConfiguration {
+ id String @id @default(uuid()) @db.Uuid
+ vehicleId String @db.Uuid @map("vehicle_id")
+ vehicle Vehicle @relation(fields:[vehicleId], references:[id], onDelete:Cascade)
+ engineCode String? @map("engine_code")
+ engineFamily String? @map("engine_family")
+ displacementCc Int? @map("displacement_cc")
+ fuelType String? @map("fuel_type")
+ gearboxCode String? @map("gearbox_code")
+ gearboxType String? @map("gearbox_type")
+ absVariant String? @map("abs_variant")
+ emissionsVariant String? @map("emissions_variant")
+ ecuHw String? @map("ecu_hw")
+ ecuSw String? @map("ecu_sw")
+ validFrom DateTime? @db.Date @map("valid_from")
+ validTo DateTime? @db.Date @map("valid_to")
+ status RecordStatus @default(QUARANTINE)
+ confidence Decimal? @db.Decimal(5,2)
+ fitments PartFitment[]
+ @@map("vehicle_configurations")
+}
+model System {
+ id String @id @default(uuid()) @db.Uuid
+ code String @unique
+ name String
+ parentId String? @db.Uuid @map("parent_id")
+ parent System? @relation("SystemTree",fields:[parentId],references:[id])
+ children System[] @relation("SystemTree")
+ parts Part[]
+ procedures Procedure[]
+ @@map("systems")
+}
+model Part {
+ id String @id @default(uuid()) @db.Uuid
+ cpPartId String @unique @map("cp_part_id")
+ systemId String @db.Uuid @map("system_id")
+ system System @relation(fields:[systemId],references:[id])
+ subsystem String?
+ componentName String @map("component_name")
+ position String?
+ nature String?
+ safetyClass String? @map("safety_class")
+ criticality Severity?
+ theoreticalQty Decimal? @db.Decimal(10,2) @map("theoretical_qty")
+ unit String?
+ status RecordStatus @default(QUARANTINE)
+ identifiers PartIdentifier[]
+ fitments PartFitment[]
+ workOrderLines WorkOrderLine[]
+ stepParts ProcedureStepPart[]
+ annotations Annotation[]
+ @@map("parts")
+}
+model PartIdentifier {
+ id String @id @default(uuid()) @db.Uuid
+ partId String @db.Uuid @map("part_id")
+ part Part @relation(fields:[partId],references:[id],onDelete:Cascade)
+ brand String
+ partNumber String @map("part_number")
+ identifierType String @map("identifier_type")
+ market String?
+ catalogue String?
+ catalogueVersion String? @map("catalogue_version")
+ status RecordStatus @default(QUARANTINE)
+ fitments PartFitment[]
+ offers Offer[]
+ @@unique([brand,partNumber,market])
+ @@index([partNumber])
+ @@map("part_identifiers")
+}
+model PartFitment {
+ id String @id @default(uuid()) @db.Uuid
+ partId String @db.Uuid @map("part_id")
+ part Part @relation(fields:[partId],references:[id])
+ partIdentifierId String? @db.Uuid @map("part_identifier_id")
+ partIdentifier PartIdentifier? @relation(fields:[partIdentifierId],references:[id])
+ vehicleConfigurationId String @db.Uuid @map("vehicle_configuration_id")
+ vehicleConfiguration VehicleConfiguration @relation(fields:[vehicleConfigurationId],references:[id])
+ fitmentStatus AssertionStatus @default(QUARANTINE) @map("fitment_status")
+ confidence Decimal? @db.Decimal(5,2)
+ market String?
+ notes String?
+ sourceAssertionId String? @db.Uuid @map("source_assertion_id")
+ sourceAssertion SourceAssertion? @relation(fields:[sourceAssertionId],references:[id])
+ reviewedBy String? @map("reviewed_by")
+ reviewedAt DateTime? @map("reviewed_at")
+ @@unique([partId,vehicleConfigurationId,partIdentifierId])
+ @@map("part_fitments")
+}
+model Source {
+ id String @id @default(uuid()) @db.Uuid
+ sourceCode String @unique @map("source_code")
+ issuer String
+ name String
+ grade SourceGrade
+ kind String?
+ uri String?
+ licence String?
+ permittedUse String? @map("permitted_use")
+ assertions SourceAssertion[]
+ recallCampaigns RecallCampaign[]
+ @@map("sources")
+}
+model SourceAssertion {
+ id String @id @default(uuid()) @db.Uuid
+ sourceId String @db.Uuid @map("source_id")
+ source Source @relation(fields:[sourceId],references:[id])
+ subjectType String @map("subject_type")
+ subjectId String @db.Uuid @map("subject_id")
+ predicate String
+ valueJson Json @map("value_json")
+ confidence Decimal? @db.Decimal(5,2)
+ status AssertionStatus @default(QUARANTINE)
+ checkedBy String? @map("checked_by")
+ checkedAt DateTime? @map("checked_at")
+ supersedesId String? @db.Uuid @map("supersedes_id")
+ supersedes SourceAssertion? @relation("AssertionHistory",fields:[supersedesId],references:[id])
+ supersededBy SourceAssertion[] @relation("AssertionHistory")
+ fitments PartFitment[]
+ @@index([subjectType,subjectId])
+ @@map("source_assertions")
+}
+model Supplier { id String @id @default(uuid()) @db.Uuid; name String; countryCode String? @map("country_code"); contactEmail String? @map("contact_email"); contactPhone String? @map("contact_phone"); rating Decimal? @db.Decimal(3,2); status RecordStatus @default(CANDIDATE); offers Offer[]; @@map("suppliers") }
+model Offer { id String @id @default(uuid()) @db.Uuid; supplierId String @db.Uuid @map("supplier_id"); supplier Supplier @relation(fields:[supplierId],references:[id]); partIdentifierId String @db.Uuid @map("part_identifier_id"); partIdentifier PartIdentifier @relation(fields:[partIdentifierId],references:[id]); price Decimal? @db.Decimal(12,2); currency String?; availability String?; leadTimeDays Int? @map("lead_time_days"); quotedAt DateTime? @map("quoted_at"); expiresAt DateTime? @map("expires_at"); @@map("offers") }
+model Fault { id String @id @default(uuid()) @db.Uuid; vehicleId String @db.Uuid @map("vehicle_id"); vehicle Vehicle @relation(fields:[vehicleId],references:[id]); faultCode String @unique @map("fault_code"); symptom String; description String?; severity Severity; status RecordStatus @default(DRAFT); openedAt DateTime @default(now()) @map("opened_at"); closedAt DateTime? @map("closed_at"); diagnosticCases DiagnosticCase[]; workOrders WorkOrder[]; @@map("faults") }
+model DiagnosticCase { id String @id @default(uuid()) @db.Uuid; faultId String @db.Uuid @map("fault_id"); fault Fault @relation(fields:[faultId],references:[id],onDelete:Cascade); version Int @default(1); status RecordStatus @default(DRAFT); rootCause String? @map("root_cause"); nodes DiagnosticNode[]; edges DiagnosticEdge[]; @@unique([faultId,version]); @@map("diagnostic_cases") }
+model DiagnosticNode { id String @id @default(uuid()) @db.Uuid; diagnosticCaseId String @db.Uuid @map("diagnostic_case_id"); diagnosticCase DiagnosticCase @relation(fields:[diagnosticCaseId],references:[id],onDelete:Cascade); nodeType DiagnosticNodeType @map("node_type"); title String; body String?; expectedValue Json? @map("expected_value"); actualValue Json? @map("actual_value"); unit String?; sequence Int?; status RecordStatus @default(DRAFT); outgoing DiagnosticEdge[] @relation("FromNode"); incoming DiagnosticEdge[] @relation("ToNode"); @@map("diagnostic_nodes") }
+model DiagnosticEdge { id String @id @default(uuid()) @db.Uuid; diagnosticCaseId String @db.Uuid @map("diagnostic_case_id"); diagnosticCase DiagnosticCase @relation(fields:[diagnosticCaseId],references:[id],onDelete:Cascade); fromNodeId String @db.Uuid @map("from_node_id"); fromNode DiagnosticNode @relation("FromNode",fields:[fromNodeId],references:[id],onDelete:Cascade); toNodeId String @db.Uuid @map("to_node_id"); toNode DiagnosticNode @relation("ToNode",fields:[toNodeId],references:[id],onDelete:Cascade); edgeType DiagnosticEdgeType @map("edge_type"); label String?; @@unique([fromNodeId,toNodeId,edgeType]); @@map("diagnostic_edges") }
+model Procedure { id String @id @default(uuid()) @db.Uuid; procedureCode String @map("procedure_code"); title String; systemId String? @db.Uuid @map("system_id"); system System? @relation(fields:[systemId],references:[id]); version String; objective String?; applicability Json?; riskLevel Severity? @map("risk_level"); status RecordStatus @default(DRAFT); author String?; reviewer String?; publishedAt DateTime? @map("published_at"); steps ProcedureStep[]; workOrders WorkOrder[]; @@unique([procedureCode,version]); @@map("procedures") }
+model ProcedureStep { id String @id @default(uuid()) @db.Uuid; procedureId String @db.Uuid @map("procedure_id"); procedure Procedure @relation(fields:[procedureId],references:[id],onDelete:Cascade); sequence Int; phase String?; title String; objective String?; instruction String; warning String?; acceptanceCriteria String? @map("acceptance_criteria"); tools ProcedureStepTool[]; parts ProcedureStepPart[]; checks ProcedureStepCheck[]; evidenceRequirements ProcedureEvidenceRequirement[]; workOrderResults WorkOrderStepResult[]; @@unique([procedureId,sequence]); @@map("procedure_steps") }
+model Tool { id String @id @default(uuid()) @db.Uuid; toolCode String @unique @map("tool_code"); name String; serialNumber String? @map("serial_number"); calibrationDue DateTime? @db.Date @map("calibration_due"); softwareVersion String? @map("software_version"); status RecordStatus @default(CONFIRMED); stepTools ProcedureStepTool[]; workOrderLines WorkOrderLine[]; @@map("tools") }
+model ProcedureStepTool { stepId String @db.Uuid @map("step_id"); step ProcedureStep @relation(fields:[stepId],references:[id],onDelete:Cascade); toolId String @db.Uuid @map("tool_id"); tool Tool @relation(fields:[toolId],references:[id]); required Boolean @default(true); quantity Decimal @default(1) @db.Decimal(10,2); note String?; @@id([stepId,toolId]); @@map("procedure_step_tools") }
+model ProcedureStepPart { stepId String @db.Uuid @map("step_id"); step ProcedureStep @relation(fields:[stepId],references:[id],onDelete:Cascade); partId String @db.Uuid @map("part_id"); part Part @relation(fields:[partId],references:[id]); requiredStatus AssertionStatus @default(CONFIRMED) @map("required_status"); quantity Decimal @default(1) @db.Decimal(10,2); note String?; @@id([stepId,partId]); @@map("procedure_step_parts") }
+model ProcedureStepCheck { id String @id @default(uuid()) @db.Uuid; stepId String @db.Uuid @map("step_id"); step ProcedureStep @relation(fields:[stepId],references:[id],onDelete:Cascade); prompt String; responseType String @map("response_type"); required Boolean @default(true); expectedValue Json? @map("expected_value"); @@map("procedure_step_checks") }
+model EvidenceAsset { id String @id @default(uuid()) @db.Uuid; projectId String @db.Uuid @map("project_id"); project Project @relation(fields:[projectId],references:[id]); vehicleId String? @db.Uuid @map("vehicle_id"); vehicle Vehicle? @relation(fields:[vehicleId],references:[id]); kind EvidenceKind; originalFilename String @map("original_filename"); mimeType String @map("mime_type"); sha256 String @unique; objectUri String @map("object_uri"); capturedAt DateTime? @map("captured_at"); uploadedAt DateTime @default(now()) @map("uploaded_at"); width Int?; height Int?; metadata Json @default("{}"); immutable Boolean @default(true); annotations Annotation[]; evidenceLinks EvidenceLink[]; recallStatuses VehicleRecallStatus[]; @@map("evidence_assets") }
+model Annotation { id String @id @default(uuid()) @db.Uuid; assetId String @db.Uuid @map("asset_id"); asset EvidenceAsset @relation(fields:[assetId],references:[id],onDelete:Cascade); geometryType String @map("geometry_type"); geometry Json; label String; partId String? @db.Uuid @map("part_id"); part Part? @relation(fields:[partId],references:[id]); confidence Decimal? @db.Decimal(5,2); createdBy String? @map("created_by"); createdAt DateTime @default(now()) @map("created_at"); @@map("annotations") }
+model EvidenceLink { id String @id @default(uuid()) @db.Uuid; assetId String @db.Uuid @map("asset_id"); asset EvidenceAsset @relation(fields:[assetId],references:[id],onDelete:Cascade); subjectType String @map("subject_type"); subjectId String @db.Uuid @map("subject_id"); relation String; note String?; @@unique([assetId,subjectType,subjectId,relation]); @@map("evidence_links") }
+model ProcedureEvidenceRequirement { id String @id @default(uuid()) @db.Uuid; stepId String @db.Uuid @map("step_id"); step ProcedureStep @relation(fields:[stepId],references:[id],onDelete:Cascade); evidenceKind EvidenceKind @map("evidence_kind"); required Boolean @default(true); description String; @@map("procedure_evidence_requirements") }
+model WorkOrder { id String @id @default(uuid()) @db.Uuid; workOrderCode String @unique @map("work_order_code"); vehicleId String @db.Uuid @map("vehicle_id"); vehicle Vehicle @relation(fields:[vehicleId],references:[id]); faultId String? @db.Uuid @map("fault_id"); fault Fault? @relation(fields:[faultId],references:[id]); procedureId String? @db.Uuid @map("procedure_id"); procedure Procedure? @relation(fields:[procedureId],references:[id]); status WorkOrderStatus @default(DRAFT); odometerKm Int? @map("odometer_km"); responsible String?; workshop String?; openedAt DateTime @default(now()) @map("opened_at"); approvedAt DateTime? @map("approved_at"); closedAt DateTime? @map("closed_at"); totalCost Decimal @default(0) @db.Decimal(12,2) @map("total_cost"); qaResult String? @map("qa_result"); lines WorkOrderLine[]; stepResults WorkOrderStepResult[]; @@map("work_orders") }
+model WorkOrderLine { id String @id @default(uuid()) @db.Uuid; workOrderId String @db.Uuid @map("work_order_id"); workOrder WorkOrder @relation(fields:[workOrderId],references:[id],onDelete:Cascade); lineType WorkOrderLineType @map("line_type"); partId String? @db.Uuid @map("part_id"); part Part? @relation(fields:[partId],references:[id]); toolId String? @db.Uuid @map("tool_id"); tool Tool? @relation(fields:[toolId],references:[id]); description String; quantity Decimal @default(1) @db.Decimal(10,2); unitCost Decimal? @db.Decimal(12,2) @map("unit_cost"); @@map("work_order_lines") }
+model WorkOrderStepResult { id String @id @default(uuid()) @db.Uuid; workOrderId String @db.Uuid @map("work_order_id"); workOrder WorkOrder @relation(fields:[workOrderId],references:[id],onDelete:Cascade); stepId String @db.Uuid @map("step_id"); step ProcedureStep @relation(fields:[stepId],references:[id]); completed Boolean @default(false); resultJson Json? @map("result_json"); completedBy String? @map("completed_by"); completedAt DateTime? @map("completed_at"); @@unique([workOrderId,stepId]); @@map("work_order_step_results") }
+model RecallCampaign { id String @id @default(uuid()) @db.Uuid; campaignRef String @map("campaign_ref"); manufacturer String; title String?; risk String?; sourceId String @db.Uuid @map("source_id"); source Source @relation(fields:[sourceId],references:[id]); status RecordStatus @default(CANDIDATE); vehicleStatuses VehicleRecallStatus[]; @@unique([manufacturer,campaignRef]); @@map("recall_campaigns") }
+model VehicleRecallStatus { id String @id @default(uuid()) @db.Uuid; vehicleId String @db.Uuid @map("vehicle_id"); campaignId String? @db.Uuid @map("campaign_id"); campaign RecallCampaign? @relation(fields:[campaignId],references:[id]); checkedAt DateTime @map("checked_at"); result String; evidenceAssetId String? @db.Uuid @map("evidence_asset_id"); evidenceAsset EvidenceAsset? @relation(fields:[evidenceAssetId],references:[id]); checkedBy String? @map("checked_by"); @@map("vehicle_recall_status") }
+model AuditEvent { id String @id @default(uuid()) @db.Uuid; actor String; entityType String @map("entity_type"); entityId String @db.Uuid @map("entity_id"); action String; beforeHash String? @map("before_hash"); afterHash String? @map("after_hash"); correlationId String? @db.Uuid @map("correlation_id"); createdAt DateTime @default(now()) @map("created_at"); metadata Json @default("{}"); @@index([entityType,entityId,createdAt]); @@map("audit_events") }

@@ -1,0 +1,256 @@
+openapi: 3.1.0
+info:
+  title: CP Clássicos Core API
+  version: 1.0.0
+  description: >-
+    API-first contract for vehicle records, parts/fitment, faults, diagnosis,
+    work orders, executable procedures, evidence and source assertions.
+servers:
+  - url: https://api.cpclassicos.example/v1
+security:
+  - bearerAuth: []
+tags:
+  - {name: Vehicles}
+  - {name: Parts}
+  - {name: Faults}
+  - {name: Diagnostics}
+  - {name: WorkOrders}
+  - {name: Procedures}
+  - {name: Evidence}
+  - {name: Assertions}
+  - {name: Search}
+paths:
+  /vehicles:
+    get:
+      tags: [Vehicles]
+      operationId: listVehicles
+      responses: {'200': {description: OK, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Vehicle'}}}}}}
+  /vehicles/{vehicleId}:
+    get:
+      tags: [Vehicles]
+      operationId: getVehicle
+      parameters: [{$ref: '#/components/parameters/VehicleId'}]
+      responses: {'200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Vehicle'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+  /vehicles/{vehicleId}/configuration:
+    get:
+      tags: [Vehicles]
+      parameters: [{$ref: '#/components/parameters/VehicleId'}]
+      responses: {'200': {description: OK, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/VehicleConfiguration'}}}}}}
+  /parts:
+    get:
+      tags: [Parts]
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/RecordStatus'}}
+      responses: {'200': {description: OK}}
+    post:
+      tags: [Parts]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PartCreate'}}}}
+      responses: {'201': {description: Created}}
+  /parts/{partId}:
+    get:
+      tags: [Parts]
+      parameters: [{$ref: '#/components/parameters/PartId'}]
+      responses: {'200': {description: OK}, '404': {$ref: '#/components/responses/NotFound'}}
+  /fitments:
+    post:
+      tags: [Parts]
+      description: New fitments enter quarantine/candidate workflow; external integrations cannot write Confirmed truth directly.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FitmentCreate'}}}}
+      responses: {'201': {description: Created}, '409': {$ref: '#/components/responses/Conflict'}}
+  /fitments/{fitmentId}/review:
+    post:
+      tags: [Parts]
+      parameters:
+        - {name: fitmentId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReviewDecision'}}}}
+      responses: {'200': {description: Reviewed}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /faults:
+    post:
+      tags: [Faults]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FaultCreate'}}}}
+      responses: {'201': {description: Created}}
+  /faults/{faultId}:
+    get:
+      tags: [Faults]
+      parameters: [{$ref: '#/components/parameters/FaultId'}]
+      responses: {'200': {description: OK}, '404': {$ref: '#/components/responses/NotFound'}}
+  /diagnostic-cases:
+    post:
+      tags: [Diagnostics]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DiagnosticCaseCreate'}}}}
+      responses: {'201': {description: Created}}
+  /diagnostic-cases/{caseId}/nodes:
+    post:
+      tags: [Diagnostics]
+      parameters: [{name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DiagnosticNodeCreate'}}}}
+      responses: {'201': {description: Created}}
+  /diagnostic-nodes/{nodeId}/edges:
+    post:
+      tags: [Diagnostics]
+      parameters: [{name: nodeId, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DiagnosticEdgeCreate'}}}}
+      responses: {'201': {description: Created}}
+  /work-orders:
+    post:
+      tags: [WorkOrders]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WorkOrderCreate'}}}}
+      responses: {'201': {description: Created}}
+  /work-orders/{workOrderId}:
+    get:
+      tags: [WorkOrders]
+      parameters: [{$ref: '#/components/parameters/WorkOrderId'}]
+      responses: {'200': {description: OK}}
+  /work-orders/{workOrderId}/lines:
+    post:
+      tags: [WorkOrders]
+      parameters: [{$ref: '#/components/parameters/WorkOrderId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WorkOrderLineCreate'}}}}
+      responses: {'201': {description: Created}}
+  /work-orders/{workOrderId}/transition:
+    post:
+      tags: [WorkOrders]
+      description: Server validates allowed state transition and QA/evidence gates before CLOSED.
+      parameters: [{$ref: '#/components/parameters/WorkOrderId'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WorkOrderTransition'}}}}
+      responses: {'200': {description: Transitioned}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /procedures:
+    get: {tags: [Procedures], responses: {'200': {description: OK}}}
+    post:
+      tags: [Procedures]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProcedureCreate'}}}}
+      responses: {'201': {description: Created}}
+  /procedures/{procedureId}/steps:
+    post:
+      tags: [Procedures]
+      parameters: [{name: procedureId, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProcedureStepCreate'}}}}
+      responses: {'201': {description: Created}}
+  /procedures/{procedureId}/publish:
+    post:
+      tags: [Procedures]
+      description: Publication requires technical review, source coverage and resolved critical validation errors.
+      parameters: [{name: procedureId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Published}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /assets/initiate-upload:
+    post:
+      tags: [Evidence]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UploadInitiate'}}}}
+      responses: {'201': {description: Upload initiated}}
+  /assets/{assetId}/annotations:
+    post:
+      tags: [Evidence]
+      parameters: [{name: assetId, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AnnotationCreate'}}}}
+      responses: {'201': {description: Created}}
+  /assertions:
+    post:
+      tags: [Assertions]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssertionCreate'}}}}
+      responses: {'201': {description: Created}}
+  /assertions/{assertionId}/review:
+    post:
+      tags: [Assertions]
+      parameters: [{name: assertionId, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReviewDecision'}}}}
+      responses: {'200': {description: Reviewed}}
+  /search:
+    get:
+      tags: [Search]
+      description: Identifier-first search: exact PN/CP ID/VIN/DTC before full text or semantic retrieval.
+      parameters: [{name: q, in: query, required: true, schema: {type: string, minLength: 1}}]
+      responses: {'200': {description: Search results}}
+  /lineage/{entityType}/{entityId}:
+    get:
+      tags: [Search]
+      parameters:
+        - {name: entityType, in: path, required: true, schema: {type: string}}
+        - {name: entityId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Evidence/source lineage}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    VehicleId: {name: vehicleId, in: path, required: true, schema: {type: string, format: uuid}}
+    PartId: {name: partId, in: path, required: true, schema: {type: string, format: uuid}}
+    FaultId: {name: faultId, in: path, required: true, schema: {type: string, format: uuid}}
+    WorkOrderId: {name: workOrderId, in: path, required: true, schema: {type: string, format: uuid}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: false, schema: {type: string, maxLength: 128}}
+    IfMatch: {name: If-Match, in: header, required: false, schema: {type: string}}
+  responses:
+    NotFound: {description: Not found, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    Conflict: {description: Conflict, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    ValidationError: {description: Validation failed, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  schemas:
+    RecordStatus: {type: string, enum: [DRAFT,QUARANTINE,CANDIDATE,CONFIRMED,REJECTED,SUPERSEDED,ARCHIVED]}
+    AssertionStatus: {type: string, enum: [QUARANTINE,CANDIDATE,CONFIRMED,REJECTED,SUPERSEDED]}
+    Severity: {type: string, enum: [LOW,MEDIUM,HIGH,CRITICAL]}
+    Vehicle:
+      type: object
+      required: [id,cpVehicleCode,manufacturer,model,status]
+      properties: {id: {type: string, format: uuid}, cpVehicleCode: {type: string}, vin: {type: [string,'null']}, registration: {type: [string,'null']}, manufacturer: {type: string}, model: {type: string}, generation: {type: [string,'null']}, modelYear: {type: [integer,'null']}, status: {$ref: '#/components/schemas/RecordStatus'}}
+    VehicleConfiguration:
+      type: object
+      properties: {id: {type: string, format: uuid}, engineCode: {type: [string,'null']}, gearboxCode: {type: [string,'null']}, absVariant: {type: [string,'null']}, emissionsVariant: {type: [string,'null']}, confidence: {type: [number,'null'], minimum: 0, maximum: 100}, status: {$ref: '#/components/schemas/RecordStatus'}}
+    PartCreate:
+      type: object
+      required: [cpPartId,systemId,componentName]
+      properties: {cpPartId: {type: string}, systemId: {type: string, format: uuid}, componentName: {type: string}, subsystem: {type: string}, criticality: {$ref: '#/components/schemas/Severity'}}
+    FitmentCreate:
+      type: object
+      required: [partId,vehicleConfigurationId]
+      properties: {partId: {type: string, format: uuid}, partIdentifierId: {type: [string,'null'], format: uuid}, vehicleConfigurationId: {type: string, format: uuid}, market: {type: string}, notes: {type: string}, sourceAssertionId: {type: [string,'null'], format: uuid}}
+    ReviewDecision:
+      type: object
+      required: [decision]
+      properties: {decision: {$ref: '#/components/schemas/AssertionStatus'}, rationale: {type: string}, sourceAssertionId: {type: [string,'null'], format: uuid}}
+    FaultCreate:
+      type: object
+      required: [vehicleId,faultCode,symptom,severity]
+      properties: {vehicleId: {type: string, format: uuid}, faultCode: {type: string}, symptom: {type: string}, description: {type: string}, severity: {$ref: '#/components/schemas/Severity'}}
+    DiagnosticCaseCreate: {type: object, required: [faultId], properties: {faultId: {type: string, format: uuid}, version: {type: integer, minimum: 1}}}
+    DiagnosticNodeCreate:
+      type: object
+      required: [nodeType,title]
+      properties: {nodeType: {type: string, enum: [SYMPTOM,HYPOTHESIS,TEST,OBSERVATION,CONCLUSION,CORRECTIVE_ACTION]}, title: {type: string}, body: {type: string}, expectedValue: {}, actualValue: {}, unit: {type: string}, sequence: {type: integer}}
+    DiagnosticEdgeCreate:
+      type: object
+      required: [toNodeId,edgeType]
+      properties: {toNodeId: {type: string, format: uuid}, edgeType: {type: string, enum: [SUPPORTS,CONTRADICTS,TESTS,NEXT_IF_TRUE,NEXT_IF_FALSE,RESOLVED_BY]}, label: {type: string}}
+    WorkOrderCreate:
+      type: object
+      required: [workOrderCode,vehicleId]
+      properties: {workOrderCode: {type: string}, vehicleId: {type: string, format: uuid}, faultId: {type: [string,'null'], format: uuid}, procedureId: {type: [string,'null'], format: uuid}, odometerKm: {type: integer, minimum: 0}, responsible: {type: string}, workshop: {type: string}}
+    WorkOrderLineCreate:
+      type: object
+      required: [lineType,description,quantity]
+      properties: {lineType: {type: string, enum: [LABOR,PART,TOOL,CONSUMABLE,OTHER]}, partId: {type: [string,'null'], format: uuid}, toolId: {type: [string,'null'], format: uuid}, description: {type: string}, quantity: {type: number, exclusiveMinimum: 0}, unitCost: {type: [number,'null'], minimum: 0}}
+    WorkOrderTransition: {type: object, required: [to], properties: {to: {type: string, enum: [DRAFT,TECHNICAL_REVIEW,APPROVED,IN_PROGRESS,QA,CLOSED,BLOCKED,CANCELLED]}, note: {type: string}}}
+    ProcedureCreate:
+      type: object
+      required: [procedureCode,title,version]
+      properties: {procedureCode: {type: string, pattern: '^M[0-9]{2}-[0-9]{2,}$'}, title: {type: string}, systemId: {type: [string,'null'], format: uuid}, version: {type: string}, objective: {type: string}, applicability: {type: object}, riskLevel: {$ref: '#/components/schemas/Severity'}}
+    ProcedureStepCreate:
+      type: object
+      required: [sequence,title,instruction]
+      properties: {sequence: {type: integer, minimum: 1}, phase: {type: string}, title: {type: string}, objective: {type: string}, instruction: {type: string}, warning: {type: string}, acceptanceCriteria: {type: string}}
+    UploadInitiate:
+      type: object
+      required: [projectId,kind,originalFilename,mimeType,sha256]
+      properties: {projectId: {type: string, format: uuid}, vehicleId: {type: [string,'null'], format: uuid}, kind: {type: string, enum: [PHOTO,DOCUMENT,SCAN,MEASUREMENT,SCREENSHOT,VIDEO,AUDIO,OTHER]}, originalFilename: {type: string}, mimeType: {type: string}, sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}}
+    AnnotationCreate:
+      type: object
+      required: [geometryType,geometry,label]
+      properties: {geometryType: {type: string, enum: [POINT,BOX,POLYGON]}, geometry: {type: object}, label: {type: string}, partId: {type: [string,'null'], format: uuid}, confidence: {type: number, minimum: 0, maximum: 100}}
+    AssertionCreate:
+      type: object
+      required: [sourceId,subjectType,subjectId,predicate,value]
+      properties: {sourceId: {type: string, format: uuid}, subjectType: {type: string}, subjectId: {type: string, format: uuid}, predicate: {type: string}, value: {}, confidence: {type: number, minimum: 0, maximum: 100}, supersedesId: {type: [string,'null'], format: uuid}}
+    Problem:
+      type: object
+      required: [type,title,status]
+      properties: {type: {type: string, format: uri-reference}, title: {type: string}, status: {type: integer}, detail: {type: string}, instance: {type: string}, correlationId: {type: string, format: uuid}, errors: {type: array, items: {type: object}}}
